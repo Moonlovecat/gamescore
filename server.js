@@ -11,40 +11,37 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+// 정적 파일은 Vercel이 직접 처리하도록 하지만, 예비용으로 둡니다.
+app.use(express.static(path.join(__dirname, 'public')));
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// MongoDB 연결 관리 (Vercel 서버리스 최적화)
+// MongoDB 연결 관리 (서버리스 최적화)
 let cachedDb = null;
 
 async function connectToDatabase() {
   if (cachedDb) return cachedDb;
   if (!MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable in Vercel settings');
+    console.error('CRITICAL: MONGODB_URI is missing!');
+    throw new Error('MONGODB_URI environment variable is not defined');
   }
   const db = await mongoose.connect(MONGODB_URI);
   cachedDb = db;
   return db;
 }
 
-// 미들웨어: 모든 API 요청 전에 DB 연결 확인
-app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api')) {
-    try {
-      await connectToDatabase();
-      next();
-    } catch (err) {
-      console.error('DB Connection Error:', err);
-      res.status(500).json({ error: 'Database connection failed' });
-    }
-  } else {
+// API 요청 시에만 DB 연결
+const dbMiddleware = async (req, res, next) => {
+  try {
+    await connectToDatabase();
     next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection failed' });
   }
-});
+};
 
 // API Routes
-app.get('/api/games', async (req, res) => {
+app.get('/api/games', dbMiddleware, async (req, res) => {
   try {
     const games = await Game.find().sort({ id: 1 });
     res.json(games);
@@ -53,7 +50,7 @@ app.get('/api/games', async (req, res) => {
   }
 });
 
-app.get('/api/reviews', async (req, res) => {
+app.get('/api/reviews', dbMiddleware, async (req, res) => {
   try {
     const reviews = await Review.find();
     res.json(reviews);
@@ -62,7 +59,7 @@ app.get('/api/reviews', async (req, res) => {
   }
 });
 
-app.get('/api/reviews/:gameId', async (req, res) => {
+app.get('/api/reviews/:gameId', dbMiddleware, async (req, res) => {
   try {
     const reviews = await Review.find({ gameId: parseInt(req.params.gameId) });
     res.json(reviews);
@@ -71,7 +68,7 @@ app.get('/api/reviews/:gameId', async (req, res) => {
   }
 });
 
-app.post('/api/reviews', async (req, res) => {
+app.post('/api/reviews', dbMiddleware, async (req, res) => {
   try {
     const newReview = new Review(req.body);
     await newReview.save();
@@ -81,15 +78,9 @@ app.post('/api/reviews', async (req, res) => {
   }
 });
 
-// 클라이언트 사이드 라우팅 처리 (에러 원인 수정: '*' -> '/*')
-app.get('/*', (req, res) => {
+// 루트 요청 등 일반 요청은 index.html 반환
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-// 로컬 실행을 위한 코드
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
 
 module.exports = app;
