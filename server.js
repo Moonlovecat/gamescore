@@ -21,7 +21,7 @@ let cachedDb = null;
 async function connectToDatabase() {
   if (cachedDb) return cachedDb;
   if (!MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable');
+    throw new Error('Please define the MONGODB_URI environment variable in Vercel settings');
   }
   const db = await mongoose.connect(MONGODB_URI);
   cachedDb = db;
@@ -35,7 +35,8 @@ app.use(async (req, res, next) => {
       await connectToDatabase();
       next();
     } catch (err) {
-      res.status(500).json({ error: 'Database connection failed: ' + err.message });
+      console.error('DB Connection Error:', err);
+      res.status(500).json({ error: 'Database connection failed' });
     }
   } else {
     next();
@@ -80,12 +81,12 @@ app.post('/api/reviews', async (req, res) => {
   }
 });
 
-// 클라이언트 사이드 라우팅 처리
-app.get('*', (req, res) => {
+// 클라이언트 사이드 라우팅 처리 (에러 원인 수정: '*' -> '/*')
+app.get('/*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 로컬 실행을 위한 코드 (Vercel에서는 무시됨)
+// 로컬 실행을 위한 코드
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
